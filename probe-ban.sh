@@ -10,7 +10,7 @@ if [[ ! -t 0 ]] && [[ -r /dev/tty ]]; then
   exec </dev/tty
 fi
 
-readonly SCRIPT_VERSION="1.0.0"
+readonly SCRIPT_VERSION="1.0.1"
 readonly SCRIPT_NAME="probe-ban.sh"
 readonly INSTALL_PATH="/usr/local/sbin/${SCRIPT_NAME}"
 readonly ENV_FILE="${PROBE_BAN_ENV:-/etc/probe-ban/security.env}"
@@ -113,7 +113,7 @@ banner() {
       ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝
 EOF
   printf '%b' "$R"
-  printf '                         %bش   ه   ا   ب%b\n' "$WHT" "$R"
+  printf '                            %bS H A H A B%b\n' "$WHT" "$R"
   printf '              %bPROBE BAN  ·  UFW  ·  NGINX LOG%b\n' "$CYN" "$R"
   printf '                    %bv%s%b\n\n' "$D" "$SCRIPT_VERSION" "$R"
 }
@@ -121,12 +121,12 @@ EOF
 stage() {
   local n="$1" title="$2"
   nl
-  printf '  %b▸ مرحله %s/6  ·  %s%b\n' "$B$BLU" "$n" "$title" "$R"
+  printf '  %b▸ Step %s/6  ·  %s%b\n' "$B$BLU" "$n" "$title" "$R"
   hr
 }
 
 need_root() {
-  [[ "$(id -u)" -eq 0 ]] || die "این اسکریپت را با root اجرا کن:  sudo bash ${SCRIPT_NAME} --wizard"
+  [[ "$(id -u)" -eq 0 ]] || die "Run as root:  sudo bash ${SCRIPT_NAME} --wizard"
 }
 
 script_dir() {
@@ -277,11 +277,11 @@ normalize_probe_path() {
   echo "$raw"
 }
 
-ttl_label_fa() {
+ttl_label() {
   if [[ "$BAN_TTL_DAYS" == "0" ]]; then
-    echo "دائمی (تا حذف دستی)"
+    echo "permanent (until manual unban)"
   else
-    echo "${BAN_TTL_DAYS} روز"
+    echo "${BAN_TTL_DAYS} days"
   fi
 }
 
@@ -289,31 +289,31 @@ format_ban_telegram() {
   local ip="$1" path="$2"
   local path_clean ttl now_human
   path_clean="$(normalize_probe_path "$path")"
-  ttl="$(ttl_label_fa)"
+  ttl="$(ttl_label)"
   now_human="$(date '+%Y-%m-%d %H:%M %Z' 2>/dev/null || date -Is)"
   cat <<EOF
-🛡 بن خودکار IP مهاجم
+🛡 Auto-banned probe IP
 
-سرور: ${SERVER_LABEL}
-آی‌پی مهاجم: ${ip}
-مسیر مشکوک: ${path_clean}
-مدت مسدودیت: ${ttl}
-زمان شناسایی: ${now_human}
+Server: ${SERVER_LABEL}
+Attacker IP: ${ip}
+Suspicious path: ${path_clean}
+Ban duration: ${ttl}
+Detected at: ${now_human}
 
-این IP به‌دلیل درخواست probe به مسیر غیرمجاز مسدود شد (UFW).
+Blocked via UFW after hitting a honeypot/probe path.
 EOF
 }
 
 format_report_telegram() {
   local active="$1" events="$2"
   cat <<EOF
-📊 گزارش روزانه probe-ban
+📊 Daily probe-ban report
 
-سرور: ${SERVER_LABEL}
-تعداد بن‌های فعال: ${active}
-رویدادهای بن امروز: ${events}
+Server: ${SERVER_LABEL}
+Active bans: ${active}
+Ban events today: ${events}
 
-جزئیات: probe-ban.sh --status
+Details: probe-ban.sh --status
 EOF
 }
 
@@ -607,26 +607,26 @@ apply_wizard_config() {
   install_self
   install_cron
   if ! command -v ufw >/dev/null 2>&1; then
-    warn "ufw نصب نیست. برای بن واقعی: apt install ufw"
+    warn "ufw not installed. For real bans: apt install ufw"
   elif ufw status 2>/dev/null | grep -qi inactive; then
-    warn "ufw غیرفعال است. برای اعمال بن: ufw enable"
+    warn "ufw is inactive. Enable with: ufw enable"
   fi
 }
 
 wizard_setup() {
-  local count i ip input_ips=() auto_val ttl_val use_cdn cidrs_val log_path label
+  local count i ip input_ips=() auto_val ttl_val cidrs_val log_path label
   need_root
   banner
-  info "ویزارد راه‌اندازی — ۶ سؤال. Enter = پیش‌فرض."
+  info "Setup wizard — 6 questions. Press Enter for defaults."
   nl
 
-  stage 1 "وایت‌لیست IP"
-  info "IPهایی که هرگز نباید بن شوند (سرور داخلی، مانیتورینگ، VPN)."
-  count="$(ask_line "چند IP یا سرور وایت‌لیست دارید؟" "0")"
-  [[ "$count" =~ ^[0-9]+$ ]] || die "تعداد باید عدد باشد."
+  stage 1 "IP whitelist"
+  info "IPs that must NEVER be banned (internal servers, monitoring, VPN)."
+  count="$(ask_line "How many IPs/servers to whitelist?" "0")"
+  [[ "$count" =~ ^[0-9]+$ ]] || die "Count must be a number."
   for ((i = 1; i <= count; i++)); do
-    ip="$(ask_line "IP شماره ${i}")"
-    is_valid_ipv4 "$ip" || die "IP نامعتبر: ${ip}"
+    ip="$(ask_line "Whitelist IP #${i}")"
+    is_valid_ipv4 "$ip" || die "Invalid IP: ${ip}"
     input_ips+=("$ip")
   done
   if ((${#input_ips[@]} > 0)); then
@@ -635,55 +635,55 @@ wizard_setup() {
     WHITELIST_IPS=""
   fi
 
-  stage 2 "بن خودکار"
-  if ask_yes "بن خودکار IP مهاجم فعال باشد؟" Y; then
+  stage 2 "Auto-ban"
+  if ask_yes "Enable automatic IP banning?" Y; then
     auto_val=1
   else
     auto_val=0
   fi
 
-  stage 3 "مدت بن"
-  ttl_val="$(ask_line "مدت بن (روز) — ۰ یعنی دائمی" "30")"
-  [[ "$ttl_val" =~ ^[0-9]+$ ]] || die "مدت بن باید عدد باشد."
+  stage 3 "Ban duration"
+  ttl_val="$(ask_line "Ban TTL in days (0 = permanent)" "30")"
+  [[ "$ttl_val" =~ ^[0-9]+$ ]] || die "TTL must be a number."
 
   stage 4 "CDN / reverse proxy"
   cidrs_val=""
-  if ask_yes "از CDN یا reverse proxy جلوی سرور استفاده می‌کنید؟" N; then
-    info "CIDRهای CDN را با کاما بده. مثال: 185.143.232.0/22,94.101.182.0/27"
-    cidrs_val="$(ask_line "لیست CIDR (خالی = بعداً در env)" "")"
+  if ask_yes "Do you use a CDN or reverse proxy in front of this server?" N; then
+    info "Enter CDN CIDRs comma-separated. Example: 185.143.232.0/22,94.101.182.0/27"
+    cidrs_val="$(ask_line "CIDR list (empty = set later in env)" "")"
   fi
 
-  stage 5 "مسیر لاگ probe"
-  info "nginx باید درخواست‌های مشکوک را در این فایل بنویسد."
-  log_path="$(ask_line "مسیر فایل لاگ probe" "$DEFAULT_LOG")"
-  [[ -n "$log_path" ]] || die "مسیر لاگ خالی است."
+  stage 5 "Probe log path"
+  info "nginx must write suspicious requests to this file."
+  log_path="$(ask_line "Probe log file path" "$DEFAULT_LOG")"
+  [[ -n "$log_path" ]] || die "Log path cannot be empty."
 
-  stage 6 "مرور نهایی"
+  stage 6 "Review"
   label="$(hostname -s 2>/dev/null || echo server)"
   box_top
-  box_line "سرور          ${label}"
-  box_line "وایت‌لیست     ${WHITELIST_IPS:-—}"
-  box_line "بن خودکار     $([[ $auto_val -eq 1 ]] && echo بله || echo خیر)"
-  box_line "مدت بن        $([[ $ttl_val -eq 0 ]] && echo دائمی || echo ${ttl_val} روز)"
-  box_line "CDN CIDR      ${cidrs_val:-—}"
-  box_line "لاگ probe     ${log_path}"
-  box_line "env           ${ENV_FILE}"
+  box_line "Server        ${label}"
+  box_line "Whitelist     ${WHITELIST_IPS:--}"
+  box_line "Auto-ban      $([[ $auto_val -eq 1 ]] && echo yes || echo no)"
+  box_line "Ban TTL       $([[ $ttl_val -eq 0 ]] && echo permanent || echo ${ttl_val} days)"
+  box_line "CDN CIDR      ${cidrs_val:--}"
+  box_line "Probe log     ${log_path}"
+  box_line "Env file      ${ENV_FILE}"
   box_bottom
   nl
-  ask_yes "با همین تنظیمات ذخیره و نصب شود؟" Y || die "لغو شد. چیزی روی سرور عوض نشد."
+  ask_yes "Save and install with these settings?" Y || die "Cancelled. Nothing was changed."
 
   nl
-  printf '  %bدر حال ذخیره…%b\n' "$B$MAG" "$R"
+  printf '  %bSaving…%b\n' "$B$MAG" "$R"
   hr
   apply_wizard_config "$WHITELIST_IPS" "$auto_val" "$ttl_val" "$cidrs_val" "$log_path" "$label"
   banner
-  ok "تنظیمات ذخیره شد: ${ENV_FILE}"
-  ok "اسکریپت نصب شد: ${INSTALL_PATH}"
-  ok "cron فعال شد: /etc/cron.d/probe-ban"
+  ok "Config saved: ${ENV_FILE}"
+  ok "Script installed: ${INSTALL_PATH}"
+  ok "Cron enabled: /etc/cron.d/probe-ban"
   nl
-  info "وضعیت:  ${INSTALL_PATH} --status"
-  info "تست:    ${INSTALL_PATH} --dry-run"
-  info "آن‌بن:   ${INSTALL_PATH} --unban IP"
+  info "Status:  ${INSTALL_PATH} --status"
+  info "Test:    ${INSTALL_PATH} --dry-run"
+  info "Unban:   ${INSTALL_PATH} --unban IP"
   nl
 }
 
@@ -691,7 +691,7 @@ show_status_pretty() {
   banner
   load_env
   ensure_state
-  printf '  %bوضعیت فعلی%b\n\n' "$WHT" "$R"
+  printf '  %bCurrent status%b\n\n' "$WHT" "$R"
   print_status
   nl
 }
@@ -699,12 +699,12 @@ show_status_pretty() {
 menu() {
   need_root
   banner
-  printf '  %b۱%b   راه‌اندازی / تنظیم دوباره (ویزارد)\n' "$CYN" "$R"
-  printf '  %b۲%b   نمایش وضعیت بن‌ها\n' "$CYN" "$R"
-  printf '  %b۳%b   تست dry-run (بدون بن واقعی)\n' "$CYN" "$R"
-  printf '  %b۰%b   خروج\n\n' "$CYN" "$R"
+  printf '  %b1%b   Setup / reconfigure (wizard)\n' "$CYN" "$R"
+  printf '  %b2%b   Show ban status\n' "$CYN" "$R"
+  printf '  %b3%b   Dry-run (preview, no real ban)\n' "$CYN" "$R"
+  printf '  %b0%b   Exit\n\n' "$CYN" "$R"
   local choice
-  choice="$(ask_line "انتخاب" "1")"
+  choice="$(ask_line "Choice" "1")"
   case "$choice" in
     1) wizard_setup ;;
     2) show_status_pretty ;;
@@ -715,7 +715,7 @@ menu() {
       nl
       ;;
     0) nl; exit 0 ;;
-    *) die "گزینه نامعتبر." ;;
+    *) die "Invalid choice." ;;
   esac
 }
 
