@@ -10,7 +10,7 @@ if [[ ! -t 0 ]] && [[ -r /dev/tty ]]; then
   exec </dev/tty
 fi
 
-readonly SCRIPT_VERSION="1.0.4"
+readonly SCRIPT_VERSION="1.0.5"
 readonly SCRIPT_NAME="probe-ban.sh"
 readonly INSTALL_PATH="/usr/local/sbin/${SCRIPT_NAME}"
 readonly UPDATE_URL="https://cdn.jsdelivr.net/gh/sedshahab0/shahab-probe-ban@main/probe-ban.sh"
@@ -88,6 +88,10 @@ die() {
 ok()   { printf '  %b✓%b %s\n' "$GRN" "$R" "$1"; }
 info() { printf '  %b•%b %s\n' "$CYN" "$R" "$1"; }
 warn() { printf '  %b!%b %s\n' "$YLW" "$R" "$1"; }
+
+answer_example() {
+  printf '  %b>> Answer like this:%b %s\n' "$YLW$B" "$R" "$1"
+}
 
 hr() {
   printf '  %b────────────────────────────────────────────────────────────%b\n' "$D" "$R"
@@ -657,12 +661,15 @@ wizard_setup() {
   info "  - Your home/office IP        e.g. 192.0.2.44"
   info "  - Backup / staging server    e.g. 10.0.0.2"
   nl
-  count="$(ask_line "How many IPs to whitelist? (type 0 for none)" "0")"
-  [[ "$count" =~ ^[0-9]+$ ]] || die "Count must be a number (example: 0, 1, 2)."
+  answer_example "0        (no whitelist)"
+  answer_example "2        (then enter two IPs one by one)"
+  count="$(ask_line "How many IPs to whitelist?" "0")"
+  [[ "$count" =~ ^[0-9]+$ ]] || die "Invalid. Answer like this: 0   or   2"
   for ((i = 1; i <= count; i++)); do
-    ip="$(ask_line "Whitelist IP #${i} (IPv4 only, e.g. 203.0.113.10)" "")"
-    [[ -n "$ip" ]] || die "IP #${i} cannot be empty."
-    is_valid_ipv4 "$ip" || die "Invalid IPv4: ${ip}  (example: 203.0.113.10)"
+    answer_example "203.0.113.10"
+    ip="$(ask_line "Whitelist IP #${i}" "")"
+    [[ -n "$ip" ]] || die "IP #${i} cannot be empty. Answer like this: 203.0.113.10"
+    is_valid_ipv4 "$ip" || die "Invalid IPv4: ${ip}. Answer like this: 203.0.113.10"
     input_ips+=("$ip")
   done
   if ((${#input_ips[@]} > 0)); then
@@ -676,6 +683,8 @@ wizard_setup() {
   info "When OFF: the log is still read, but no firewall rule is added."
   info "Example: scanner hits /.env -> IP 198.51.100.99 gets ufw deny."
   nl
+  answer_example "y        (yes — block attackers automatically)"
+  answer_example "n        (no — read log only, no UFW ban)"
   if ask_yes "Enable automatic IP banning?" Y; then
     auto_val=1
   else
@@ -689,8 +698,11 @@ wizard_setup() {
   info "   7  = ban for one week"
   info "   0  = permanent until you run: probe-ban.sh --unban IP"
   nl
+  answer_example "30       (ban for 30 days — recommended)"
+  answer_example "7        (ban for 7 days)"
+  answer_example "0        (permanent ban)"
   ttl_val="$(ask_line "Ban TTL in days" "30")"
-  [[ "$ttl_val" =~ ^[0-9]+$ ]] || die "TTL must be a number (examples: 7, 30, 0)."
+  [[ "$ttl_val" =~ ^[0-9]+$ ]] || die "Invalid. Answer like this: 30   or   7   or   0"
 
   stage 4 "CDN / reverse proxy"
   info "Answer YES only if visitors reach nginx through a CDN or reverse proxy."
@@ -698,6 +710,8 @@ wizard_setup() {
   info "Examples: Cloudflare, ArvanCloud, nginx behind another load balancer."
   info "If traffic goes directly to this server, answer NO."
   nl
+  answer_example "n        (no CDN — direct traffic to this server)"
+  answer_example "y        (yes — then paste CIDR ranges next)"
   cidrs_val=""
   if ask_yes "Use a CDN or reverse proxy in front of this server?" N; then
     info "Enter network ranges (CIDR) comma-separated, no spaces required."
@@ -706,7 +720,9 @@ wizard_setup() {
     info "Cloudflare example (pick ranges for your plan):"
     info "  173.245.48.0/20,103.21.244.0/22"
     nl
-    cidrs_val="$(ask_line "CDN/proxy CIDR list (leave empty to edit later)" "")"
+    answer_example "185.143.232.0/22,94.101.182.0/27"
+    answer_example "(empty)  press Enter to set CIDRs later in env file"
+    cidrs_val="$(ask_line "CDN/proxy CIDR list" "")"
   fi
 
   stage 5 "Probe log path"
@@ -717,8 +733,9 @@ wizard_setup() {
   info "  curl https://your-domain/.env"
   info "  tail -f /var/log/nginx/probes.log"
   nl
+  answer_example "/var/log/nginx/probes.log"
   log_path="$(ask_line "Full path to probe log file" "$DEFAULT_LOG")"
-  [[ -n "$log_path" ]] || die "Log path cannot be empty."
+  [[ -n "$log_path" ]] || die "Log path cannot be empty. Answer like this: /var/log/nginx/probes.log"
   if [[ ! -f "$log_path" ]]; then
     warn "File does not exist yet: ${log_path}"
     info "The wizard will create it, but nginx must be configured to write there."
@@ -743,6 +760,8 @@ wizard_setup() {
   info "  - script  -> ${INSTALL_PATH}"
   info "  - cron    -> /etc/cron.d/probe-ban (every 5 min)"
   nl
+  answer_example "y        (yes — save and install)"
+  answer_example "n        (no — cancel, change nothing)"
   ask_yes "Save and install with these settings?" Y || die "Cancelled. Nothing was changed."
 
   nl
