@@ -10,7 +10,7 @@ if [[ ! -t 0 ]] && [[ -r /dev/tty ]]; then
   exec </dev/tty
 fi
 
-readonly SCRIPT_VERSION="1.0.3"
+readonly SCRIPT_VERSION="1.0.4"
 readonly SCRIPT_NAME="probe-ban.sh"
 readonly INSTALL_PATH="/usr/local/sbin/${SCRIPT_NAME}"
 readonly UPDATE_URL="https://cdn.jsdelivr.net/gh/sedshahab0/shahab-probe-ban@main/probe-ban.sh"
@@ -645,16 +645,24 @@ wizard_setup() {
   local count i ip input_ips=() auto_val ttl_val cidrs_val log_path label
   need_root
   banner
-  info "Setup wizard — 6 questions. Press Enter for defaults."
+  info "Setup wizard — 6 short questions."
+  info "Press Enter to accept the value in [brackets]."
   nl
 
   stage 1 "IP whitelist"
-  info "IPs that must NEVER be banned (internal servers, monitoring, VPN)."
-  count="$(ask_line "How many IPs/servers to whitelist?" "0")"
-  [[ "$count" =~ ^[0-9]+$ ]] || die "Count must be a number."
+  info "Trusted IPs are NEVER banned — even if they hit a honeypot path."
+  info "Examples you might whitelist:"
+  info "  - Another server you own     e.g. 203.0.113.10"
+  info "  - Uptime monitor             e.g. 198.51.100.5"
+  info "  - Your home/office IP        e.g. 192.0.2.44"
+  info "  - Backup / staging server    e.g. 10.0.0.2"
+  nl
+  count="$(ask_line "How many IPs to whitelist? (type 0 for none)" "0")"
+  [[ "$count" =~ ^[0-9]+$ ]] || die "Count must be a number (example: 0, 1, 2)."
   for ((i = 1; i <= count; i++)); do
-    ip="$(ask_line "Whitelist IP #${i}")"
-    is_valid_ipv4 "$ip" || die "Invalid IP: ${ip}"
+    ip="$(ask_line "Whitelist IP #${i} (IPv4 only, e.g. 203.0.113.10)" "")"
+    [[ -n "$ip" ]] || die "IP #${i} cannot be empty."
+    is_valid_ipv4 "$ip" || die "Invalid IPv4: ${ip}  (example: 203.0.113.10)"
     input_ips+=("$ip")
   done
   if ((${#input_ips[@]} > 0)); then
@@ -664,6 +672,10 @@ wizard_setup() {
   fi
 
   stage 2 "Auto-ban"
+  info "When ON: a new IP in the probe log is blocked with UFW automatically."
+  info "When OFF: the log is still read, but no firewall rule is added."
+  info "Example: scanner hits /.env -> IP 198.51.100.99 gets ufw deny."
+  nl
   if ask_yes "Enable automatic IP banning?" Y; then
     auto_val=1
   else
@@ -671,32 +683,65 @@ wizard_setup() {
   fi
 
   stage 3 "Ban duration"
-  ttl_val="$(ask_line "Ban TTL in days (0 = permanent)" "30")"
-  [[ "$ttl_val" =~ ^[0-9]+$ ]] || die "TTL must be a number."
+  info "How long a ban stays before it expires automatically."
+  info "Examples:"
+  info "  30  = ban for 30 days (recommended)"
+  info "   7  = ban for one week"
+  info "   0  = permanent until you run: probe-ban.sh --unban IP"
+  nl
+  ttl_val="$(ask_line "Ban TTL in days" "30")"
+  [[ "$ttl_val" =~ ^[0-9]+$ ]] || die "TTL must be a number (examples: 7, 30, 0)."
 
   stage 4 "CDN / reverse proxy"
+  info "Answer YES only if visitors reach nginx through a CDN or reverse proxy."
+  info "Then nginx logs the CDN/proxy IP — those ranges must be trusted."
+  info "Examples: Cloudflare, ArvanCloud, nginx behind another load balancer."
+  info "If traffic goes directly to this server, answer NO."
+  nl
   cidrs_val=""
-  if ask_yes "Do you use a CDN or reverse proxy in front of this server?" N; then
-    info "Enter CDN CIDRs comma-separated. Example: 185.143.232.0/22,94.101.182.0/27"
-    cidrs_val="$(ask_line "CIDR list (empty = set later in env)" "")"
+  if ask_yes "Use a CDN or reverse proxy in front of this server?" N; then
+    info "Enter network ranges (CIDR) comma-separated, no spaces required."
+    info "Arvan example:"
+    info "  185.143.232.0/22,94.101.182.0/27,188.229.116.16/30"
+    info "Cloudflare example (pick ranges for your plan):"
+    info "  173.245.48.0/20,103.21.244.0/22"
+    nl
+    cidrs_val="$(ask_line "CDN/proxy CIDR list (leave empty to edit later)" "")"
   fi
 
   stage 5 "Probe log path"
-  info "nginx must write suspicious requests to this file."
-  log_path="$(ask_line "Probe log file path" "$DEFAULT_LOG")"
+  info "nginx must write honeypot/probe hits to a separate log file."
+  info "Typical nginx config:"
+  info '  access_log /var/log/nginx/probes.log probe_format;'
+  info "After setup, test with:"
+  info "  curl https://your-domain/.env"
+  info "  tail -f /var/log/nginx/probes.log"
+  nl
+  log_path="$(ask_line "Full path to probe log file" "$DEFAULT_LOG")"
   [[ -n "$log_path" ]] || die "Log path cannot be empty."
+  if [[ ! -f "$log_path" ]]; then
+    warn "File does not exist yet: ${log_path}"
+    info "The wizard will create it, but nginx must be configured to write there."
+  fi
 
   stage 6 "Review"
+  info "Check everything below. Nothing is written until you confirm."
+  nl
   label="$(hostname -s 2>/dev/null || echo server)"
   box_top
   box_line "Server        ${label}"
-  box_line "Whitelist     ${WHITELIST_IPS:--}"
+  box_line "Whitelist     ${WHITELIST_IPS:-none}"
   box_line "Auto-ban      $([[ $auto_val -eq 1 ]] && echo yes || echo no)"
   box_line "Ban TTL       $([[ $ttl_val -eq 0 ]] && echo permanent || echo ${ttl_val} days)"
-  box_line "CDN CIDR      ${cidrs_val:--}"
+  box_line "CDN CIDR      ${cidrs_val:-none}"
   box_line "Probe log     ${log_path}"
   box_line "Env file      ${ENV_FILE}"
   box_bottom
+  nl
+  info "After confirm:"
+  info "  - config  -> ${ENV_FILE}"
+  info "  - script  -> ${INSTALL_PATH}"
+  info "  - cron    -> /etc/cron.d/probe-ban (every 5 min)"
   nl
   ask_yes "Save and install with these settings?" Y || die "Cancelled. Nothing was changed."
 
