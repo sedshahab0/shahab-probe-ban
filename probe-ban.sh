@@ -10,9 +10,10 @@ if [[ ! -t 0 ]] && [[ -r /dev/tty ]]; then
   exec </dev/tty
 fi
 
-readonly SCRIPT_VERSION="1.0.1"
+readonly SCRIPT_VERSION="1.0.2"
 readonly SCRIPT_NAME="probe-ban.sh"
 readonly INSTALL_PATH="/usr/local/sbin/${SCRIPT_NAME}"
+readonly UPDATE_URL="https://raw.githubusercontent.com/sedshahab0/shahab-probe-ban/main/probe-ban.sh"
 readonly ENV_FILE="${PROBE_BAN_ENV:-/etc/probe-ban/security.env}"
 readonly DEFAULT_LOG="/var/log/nginx/probes.log"
 readonly DEFAULT_STATE="/var/lib/probe-ban"
@@ -598,6 +599,27 @@ install_self() {
   install -m 755 -o root -g root "$src" "$INSTALL_PATH"
 }
 
+update_self() {
+  need_root
+  command -v curl >/dev/null 2>&1 || die "curl required: apt install curl"
+  local tmp
+  tmp="$(mktemp)"
+  info "Downloading latest from GitHub…"
+  if ! curl -fsSL "$UPDATE_URL" -o "$tmp"; then
+    rm -f "$tmp"
+    die "Download failed. Check network or GitHub URL."
+  fi
+  bash -n "$tmp" || { rm -f "$tmp"; die "Downloaded script failed syntax check."; }
+  install -m 755 -o root -g root "$tmp" "$INSTALL_PATH"
+  rm -f "$tmp"
+  local new_ver
+  new_ver="$(grep -m1 '^readonly SCRIPT_VERSION=' "$INSTALL_PATH" | sed 's/.*"\(.*\)".*/\1/')"
+  banner
+  ok "Updated ${INSTALL_PATH} -> v${new_ver}"
+  info "Run: ${INSTALL_PATH} --wizard"
+  nl
+}
+
 apply_wizard_config() {
   local w_ips="$1" auto="$2" ttl="$3" cidrs="$4" log_path="$5" label="$6"
   write_security_env "$w_ips" "$auto" "$ttl" "$cidrs" "$log_path" "$label"
@@ -702,6 +724,7 @@ menu() {
   printf '  %b1%b   Setup / reconfigure (wizard)\n' "$CYN" "$R"
   printf '  %b2%b   Show ban status\n' "$CYN" "$R"
   printf '  %b3%b   Dry-run (preview, no real ban)\n' "$CYN" "$R"
+  printf '  %b4%b   Update script from GitHub\n' "$CYN" "$R"
   printf '  %b0%b   Exit\n\n' "$CYN" "$R"
   local choice
   choice="$(ask_line "Choice" "1")"
@@ -714,6 +737,7 @@ menu() {
       process_log 1
       nl
       ;;
+    4) update_self ;;
     0) nl; exit 0 ;;
     *) die "Invalid choice." ;;
   esac
@@ -723,6 +747,7 @@ main() {
   case "${1:-}" in
     --wizard|wizard) wizard_setup ;;
     --menu|menu) menu ;;
+    --update|update) update_self ;;
     --status) load_env; ensure_state; print_status ;;
     --dry-run) load_env; ensure_state; process_log 1 ;;
     --unban)
@@ -748,6 +773,7 @@ main() {
 Usage:
   ${SCRIPT_NAME}                 interactive menu (TTY) or process log (cron)
   ${SCRIPT_NAME} --wizard        setup wizard (6 questions)
+  ${SCRIPT_NAME} --update        download latest script from GitHub
   ${SCRIPT_NAME} run             process probe log (for cron)
   ${SCRIPT_NAME} --status        show ban list
   ${SCRIPT_NAME} --dry-run       show what would be banned
