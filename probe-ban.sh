@@ -10,10 +10,11 @@ if [[ ! -t 0 ]] && [[ -r /dev/tty ]]; then
   exec </dev/tty
 fi
 
-readonly SCRIPT_VERSION="1.0.2"
+readonly SCRIPT_VERSION="1.0.3"
 readonly SCRIPT_NAME="probe-ban.sh"
 readonly INSTALL_PATH="/usr/local/sbin/${SCRIPT_NAME}"
-readonly UPDATE_URL="https://raw.githubusercontent.com/sedshahab0/shahab-probe-ban/main/probe-ban.sh"
+readonly UPDATE_URL="https://cdn.jsdelivr.net/gh/sedshahab0/shahab-probe-ban@main/probe-ban.sh"
+readonly REPO_URL="https://github.com/sedshahab0/shahab-probe-ban"
 readonly ENV_FILE="${PROBE_BAN_ENV:-/etc/probe-ban/security.env}"
 readonly DEFAULT_LOG="/var/log/nginx/probes.log"
 readonly DEFAULT_STATE="/var/lib/probe-ban"
@@ -116,7 +117,12 @@ EOF
   printf '%b' "$R"
   printf '                            %bS H A H A B%b\n' "$WHT" "$R"
   printf '              %bPROBE BAN  ·  UFW  ·  NGINX LOG%b\n' "$CYN" "$R"
-  printf '                    %bv%s%b\n\n' "$D" "$SCRIPT_VERSION" "$R"
+  printf '                    %bv%s%b\n' "$D" "$SCRIPT_VERSION" "$R"
+  if [[ -t 1 ]]; then
+    printf '              %b%s%b\n\n' "$D" "$(realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")" "$R"
+  else
+    nl
+  fi
 }
 
 stage() {

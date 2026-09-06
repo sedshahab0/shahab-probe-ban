@@ -19,10 +19,45 @@
 
 ---
 
+## به‌روزرسانی اسکریپت روی سرور
+
+اولین بار که ویزارد را اجرا کردی، اسکریپت کپی شد به `/usr/local/sbin/probe-ban.sh`.  
+**`probe-ban.sh` بدون curl فقط همان فایل قدیمی روی سرور را اجرا می‌کند** — برای همین هنوز v1.0.0 فارسی می‌بینی.
+
+روی سرور **دقیقاً این دستور** را بزن (از jsDelivr — `raw.githubusercontent.com` گاهی نسخه قدیمی می‌دهد):
+
+```bash
+curl -fsSL https://cdn.jsdelivr.net/gh/sedshahab0/shahab-probe-ban@main/probe-ban.sh \
+  -o /usr/local/sbin/probe-ban.sh && chmod +x /usr/local/sbin/probe-ban.sh
+```
+
+چک کن:
+
+```bash
+grep SCRIPT_VERSION /usr/local/sbin/probe-ban.sh
+probe-ban.sh --wizard
+```
+
+باید **v1.0.3** و متن **انگلیسی** (`Step 1/6 · IP whitelist`) باشد.
+
+یا:
+
+```bash
+bash <(curl -fsSL https://cdn.jsdelivr.net/gh/sedshahab0/shahab-probe-ban@main/install.sh)
+```
+
+---
+
 ## نصب سریع (یک دستور)
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/sedshahab0/shahab-probe-ban/main/probe-ban.sh) --wizard
+bash <(curl -fsSL https://cdn.jsdelivr.net/gh/sedshahab0/shahab-probe-ban@main/install.sh)
+```
+
+یا:
+
+```bash
+bash <(curl -fsSL https://cdn.jsdelivr.net/gh/sedshahab0/shahab-probe-ban@main/probe-ban.sh) --wizard
 ```
 
 اگر `curl` نصب نیست:
@@ -42,7 +77,7 @@ apt-get update && apt-get install -y curl
 ```bash
 git clone https://github.com/sedshahab0/shahab-probe-ban.git
 cd shahab-probe-ban
-sudo bash probe-ban.sh --wizard
+sudo bash install.sh
 ```
 
 ---
